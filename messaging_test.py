@@ -1,11 +1,17 @@
 import os
 import requests
 import json
+import time
 def test_broadcast(local):
 
     address = local + ":" + str(8082) + "/kv-store/test_POST"
     print("sending to ip: " + address)
-    response = requests.post(address, json = {"key": "key", "val": "val"})
+    response = requests.post(address, json = {"val": "val"})
+    print(response)
+    time.sleep(1)
+    address = local + ":" + str(8082) + "/kv-store/test_POST"
+    print("sending to ip: " + address)
+    response = requests.post(address, json = {"val": "val2"})
     print(response)
 
 if __name__ == "__main__":
