@@ -50,7 +50,7 @@ def startup():
     for x in ips:
         if x != my_ip:
             view.append(x)
-    majority = len(view)// 2
+    majority = len(view)// 2 + 1
 
 
 @app.route('/', methods = ['GET'])
@@ -62,9 +62,10 @@ def home():
     global test_comes
     global accepted_val
     global accepted_proposal
+    global majority
     # global proposal_number
     proposal_number = 0
-    info = flask.jsonify({"my_id": my_id, "my_ip": my_ip, "view": view, "test_val": test_val, "outcomes": test_comes, "accepted_val": accepted_val, "accepted_proposal": accepted_proposal})
+    info = flask.jsonify({"my_id": my_id, "my_ip": my_ip, "majority": majority, "view": view, "test_val": test_val, "outcomes": test_comes, "accepted_val": accepted_val, "accepted_proposal": accepted_proposal})
     return info
 
 # @app.route('/kv-store/<key>', methods = ['GET'])
@@ -113,7 +114,7 @@ def test_recieve():
             with accepted_proposal_lock:
                 if accepted_proposal > -1:
                     msg = {"result": "accepted", "accepted_proposal": accepted_proposal, "accepted_val": accepted_val}
-        
+
         if msg != None:
             return flask.jsonify(msg)
 
@@ -164,9 +165,9 @@ def test_POST():
     redo = True
     
     
-    while redo:
-        proposal_number, accept_val = prepare(val)
-        redo = accept(base_proposal, accept_val)
+    # while redo:
+    proposal_number, accept_val = prepare(val)
+    redo = accept(proposal_number, accept_val)
     
     return flask.jsonify({"Success":1}) 
 
@@ -210,8 +211,7 @@ def prepare(val):
             time.sleep(.1)
             
             outcomes.sort(reverse=True)
-            global test_comes
-            test_comes.append(outcomes)
+            
 
             if len(outcomes) > 0 and outcomes[0][0] > -1:
                 already_accepted = True
@@ -287,10 +287,14 @@ def accept(proposal_number, val):
     wait_response = True
     redo = False
 
+
     # Use this area for seeing if i need to rerun the entire process with a larger proposal number, add checks to see if ive gotten stuff about
     while wait_response: 
+
         
         time.sleep(.1)
+        global test_comes
+        test_comes.append(outcomes)
 
         if len(outcomes) >= majority:
             if "reject" in outcomes:
@@ -313,6 +317,8 @@ def accept_thread(msg, address, outcomes, stop_threads):
         res = requests.post(address, json = msg, timeout=1)
         if res:
             res = res.json()
+            global test_comes
+            test_comes.append((res["result"],msg["proposal_number"]))
             if res["result"] > msg["proposal_number"]:
                 outcomes.append("reject")
                 success = True
