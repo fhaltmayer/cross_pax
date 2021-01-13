@@ -18,22 +18,17 @@ view = []
 majority = None
 kv_log = KV()
 
-base_proposal = 0
-base_proposal_lock = threading.Lock()
-
-min_proposal = -1
-min_proposal_lock = threading.Lock()
-
-accepted_val = None
-accepted_val_lock = threading.Lock()
-
-accepted_proposal = -1
-accepted_proposal_lock = threading.Lock()
 
 debug_recieved_msg = []
 debug_sent_msg = []
 debug_threads = []
-debug_value_log = []
+debug_val_log = []
+
+logs_lock = threading.Lock()
+val_log = {}
+paxos_log = {}
+next_free = 0
+
 
 
 
@@ -59,33 +54,32 @@ def home():
     global view 
     global my_id
     global my_ip
-    global accepted_val
-    global accepted_proposal
     global majority
     global debug_recieved_msg
     global debug_sent_msg
     global debug_threads
-    global debug_value_log
-
+    global debug_val_log
+    global val_log
     # global proposal_number
-    proposal_number = 0
-    return flask.jsonify({"my_id": my_id, "my_ip": my_ip, 
-                        "majority": majority, "view": view, "accepted_val": accepted_val, 
-                        "accepted_proposal": accepted_proposal, "debug_sent_msg": debug_sent_msg, 
-                        "debug_recieved_msg": debug_recieved_msg, "debug_threads": debug_threads, 
-                        "debug_value_log": debug_value_log })
+    return flask.jsonify({
+                        # "my_id": my_id, 
+                        # "my_ip": my_ip, 
+                        # "majority": majority, 
+                        # "view": view, 
+                        "log": val_log, 
+                        # "debug_sent_msg": debug_sent_msg, 
+                        # "debug_recieved_msg": debug_recieved_msg, 
+                        # "debug_threads": debug_threads, 
+                        # "debug_val_log": debug_val_log 
+                        })
 
 @app.route('/kv-store/test_recieve', methods = ['POST'])
 def test_recieve():
-    global min_proposal
-    global accepted_proposal
-    global accepted_proposal_lock
-    global accepted_val
-    global accepted_val_lock
     global debug_recieved_msg
-    global debug_value_log
-    global base_proposal
-
+    global debug_val_log
+    global logs_lock
+    global paxos_log
+    global val_log
     msg = None
 
     res = request.get_json()
@@ -95,22 +89,28 @@ def test_recieve():
 
         inc_pn = res["proposal_number"]
 
-        with min_proposal_lock:
+        location = res["location"]
+
+        with logs_lock:
+            if location not in paxos_log:
+                paxos_log[location] = {"base_proposal": 0, "min_proposal": -1, "accepted_val": None, "accepted_proposal": -1,  "lock": threading.Lock()}
+
+        with paxos_log[location]["lock"]:
             
-            if inc_pn < min_proposal:
-                msg = {"result": "nack", "min_proposal": min_proposal}
+            if inc_pn < paxos_log[location]["min_proposal"]:
+                msg = {"location": location, "result": "nack", "min_proposal": paxos_log[location]["min_proposal"]}
 
-            elif inc_pn > min_proposal:
-                min_proposal = inc_pn
-                with base_proposal_lock:
-                    if min_proposal//100 > base_proposal:
-                        base_proposal = min_proposal//100
+            elif inc_pn > paxos_log[location]["min_proposal"]:
+                paxos_log[location]["min_proposal"] = inc_pn
 
-                msg = {"result": "promise"}
+                if paxos_log[location]["min_proposal"]//100 > paxos_log[location]["base_proposal"]:
+                    paxos_log[location]["base_proposal"] = paxos_log[location]["min_proposal"]//100
 
-                with accepted_val_lock and accepted_proposal_lock:
-                    if accepted_proposal > -1:
-                        msg = {"result": "accepted", "accepted_proposal": accepted_proposal, "accepted_val": accepted_val}
+                msg = {"location": location, "result": "promise"}
+
+                
+                if paxos_log[location]["accepted_proposal"] > -1:
+                    msg = {"location": location, "result": "accepted", "accepted_proposal": paxos_log[location]["accepted_proposal"], "accepted_val": paxos_log[location]["accepted_val"]}
 
         # Seperated msg send due to not wanting to hold lock during message blocking
         return flask.jsonify(msg)
@@ -119,19 +119,26 @@ def test_recieve():
         
         inc_pn = res["proposal_number"]
         
-        with min_proposal_lock and accepted_val_lock and accepted_proposal_lock:
-            if inc_pn >= min_proposal:
-                accepted_proposal = inc_pn
-                accepted_val = res["val"]
-                min_proposal = inc_pn
-                with base_proposal_lock:
-                    if min_proposal//100 > base_proposal:
-                        base_proposal = min_proposal//100
+        location = res["location"]
 
-                global debug_value_log
-                debug_value_log.append((accepted_proposal, accepted_val, "accepted"))
+        with logs_lock:
+            if location not in paxos_log:
+                paxos_log[location] = {"base_proposal": 0, "min_proposal": -1, "accepted_val": None, "accepted_proposal": -1,  "lock": threading.Lock()}
 
-            msg = {"result": min_proposal}
+        
+        with paxos_log[location]["lock"]:
+            if inc_pn >= paxos_log[location]["min_proposal"]:
+                paxos_log[location]["accepted_proposal"] = inc_pn
+                paxos_log[location]["accepted_val"] = res["val"]
+                paxos_log[location]["min_proposal"] = inc_pn
+                val_log[location] = res["val"]
+                
+                if paxos_log[location]["min_proposal"]//100 > paxos_log[location]["base_proposal"]:
+                    paxos_log[location]["base_proposal"] = paxos_log[location]["min_proposal"]//100
+                   
+                debug_val_log.append((paxos_log[location]["accepted_proposal"], paxos_log[location]["accepted_val"], "accepted"))
+
+            msg = {"location": location,"result": paxos_log[location]["min_proposal"]}
 
         return flask.jsonify(msg)
 
@@ -140,24 +147,39 @@ def test_recieve():
 
 @app.route('/kv-store/test_POST', methods = ['POST'])
 def test_POST():
-
+    global val_log
+    global paxos_log
+    global next_free
     res = request.get_json()
     val = res["val"]
-    redo = True
-    decided_val = None
-    
-    while redo:
-        proposal_number, decided_val = prepare(val)
-        redo = accept(proposal_number, decided_val)
-    if val != decided_val:
-        return flask.jsonify({"Value already stored": decided_val }) 
-    else:
-        return flask.jsonify({"Success": val}) 
 
-def prepare(val):
-    global base_proposal
+    successful_log_entry = False
+
+    while not successful_log_entry:
+
+        redo = True
+        decided_val = None
+
+        with logs_lock:
+            while next_free in val_log or next_free in paxos_log:
+                next_free += 1
+            paxos_log[next_free] = {"base_proposal": 0, "min_proposal": -1, "accepted_val": None, "accepted_proposal": -1,  "lock": threading.Lock()}
+
+        while redo:
+            proposal_number, decided_val = prepare(next_free, val)
+            redo = accept(next_free, proposal_number, decided_val)
+        
+        if val != decided_val:
+            pass
+        else:
+            successful_log_entry = True
+            
+    return flask.jsonify({"result": "success", "val": val}) 
+
+def prepare(location, val):
     global view
     global debug_sent_msg
+    global paxos_log
 
     outcome = False
     already_accepted = False
@@ -166,15 +188,13 @@ def prepare(val):
     while not outcome:
 
         # add exponential backoff here
-        with base_proposal_lock:
-            base_proposal += 1
+        with paxos_log[location]["lock"]:
+            paxos_log[location]["base_proposal"] += 1
             # calculation based on having 100 nodes
-            proposal_number = (base_proposal) * 100 + my_id 
+            proposal_number = (paxos_log[location]["base_proposal"]) * 100 + my_id 
        
-        msg = {"msg": "prepare", "proposal_number": proposal_number, "val": val}
+        msg = {"location": location, "msg": "prepare", "proposal_number": proposal_number, "val": val}
         debug_sent_msg.append((msg, time.time()))
-
-
 
         outcomes = []
         threads = []
@@ -188,7 +208,7 @@ def prepare(val):
         already_accepted = False
         accepted_val = None
 
-        # Decide how long to loop waiting to see if there is a larger accepted value
+        # Decide how long to loop waiting to see if there is a larger accepted val
         wait_response = True
         count = 10
         # Use this area for seeing if i need to rerun the entire process with a larger proposal number, add checks to see if ive gotten stuff about
@@ -221,8 +241,7 @@ def prepare(val):
 
 
 def prepare_thread(msg, address, outcomes, stop_threads):
-    global base_proposal
-    global base_proposal_lock  
+    # global paxos_log
     
     success = False
     while (not stop_threads) or (not success):
@@ -247,19 +266,17 @@ def prepare_thread(msg, address, outcomes, stop_threads):
                 print("Dont understand prepare message")
                 success = True
 
-def accept(proposal_number, val):
+def accept(location, proposal_number, val):
     global view
-    global accepted_val_lock
-    global accepted_val
-    global accepted_proposal_lock
-    global accepted_proposal
-
+    global paxos_log
+    global val_log
     global debug_sent_msg
+    global debug_val_log
 
     
     # add exponential backoff here
   
-    msg = {"msg": "accept", "proposal_number": proposal_number, "val": val}
+    msg = {"location": location, "msg": "accept", "proposal_number": proposal_number, "val": val}
     debug_sent_msg.append((msg, time.time()))
     outcomes = []
     threads = []
@@ -271,7 +288,7 @@ def accept(proposal_number, val):
         thread.start()
 
 
-    # Decide how long to loop waiting to see if there is a larger accepted value
+    # Decide how long to loop waiting to see if there is a larger accepted val
     wait_response = True
     redo = False
 
@@ -288,17 +305,17 @@ def accept(proposal_number, val):
             outcome = True
             wait_response = False
 
-    global debug_value_log
+    
 
     if not redo:
-        debug_value_log.append((proposal_number, val, "to be accepted"))
-        with accepted_val_lock:
-            with accepted_proposal_lock:
-                accepted_val = val
-                accepted_proposal = proposal_number
-                debug_value_log.append((accepted_proposal, accepted_val, "accepted"))
+        debug_val_log.append((location, proposal_number, val, "to be accepted"))
+        with paxos_log[location]["lock"]:
+            paxos_log[location]["accepted_val"] = val
+            paxos_log[location]["accepted_proposal"] = proposal_number
+            debug_val_log.append((paxos_log[location]["accepted_proposal"], paxos_log[location]["accepted_val"], "accepted"))
+            val_log[location] = val
     else:
-        debug_value_log.append((proposal_number, val, "rejected"))
+        debug_val_log.append((location, proposal_number, val, "rejected"))
 
     return redo
 
@@ -342,7 +359,7 @@ def accept_thread(msg, address, outcomes, stop_threads):
    
 if __name__ == "__main__":
     startup()
-    app.run(host='0.0.0.0', threaded = True)#, use_reloader=False)
+    app.run(host='0.0.0.0', threaded = False)#, use_reloader=False)
 
 
 # def startup():

@@ -44,29 +44,36 @@ def kill_all():
     os.system("sudo docker kill $(docker ps -q)")
 
 def test_broadcast(nodes, local):
-    node = nodes[0]
-    node2  = nodes[1]
-    address = local + ":" + str(node.external_port) + "/kv-store/test_POST"
-    address2 = local + ":" + str(node2.external_port) + "/kv-store/test_POST"
-    
+   
     def concurrent(address, num):
         print("sending to ip: " + address)
         msg = {"val": "val" + str(num)}
         response = requests.post(address, json = msg)
         print(address, "done")
-    thread = threading.Thread(target=concurrent, args=(address, 1))
-    thread2 = threading.Thread(target=concurrent, args=(address2, 2))
-    thread.start()
-    thread2.start()
-    thread.join()
-    thread2.join()
+    threads = []
+    for i, x in enumerate(nodes[:len(nodes)//2]):
+        address = local + ":" + str(x.external_port) + "/kv-store/test_POST"
+        thread = threading.Thread(target=concurrent, args=(address, i))
+        thread.start()
+        threads.append(thread)
+
+    for x in threads:
+        x.join()
+
     results = []
+
     for x in nodes:
         address = local + ":" + str(x.external_port) + "/"
         response = requests.get(address)
         response = response.json()
-        results.append((x.external_port, response["accepted_val"], response["accepted_proposal"]))
+        results.append((x.external_port, response["log"]))
     print(results)
+    equal = results[0][1]
+    for x in results:
+        if x[1] != equal:
+            print("Not all the same vallue")
+            break
+
     return 1
 
 
@@ -78,7 +85,7 @@ if __name__ == "__main__":
     external_port = 8080
     ip = "10.0.0."
     net = "mynet"
-    node_count = 5
+    node_count = 10
     
     kill_all()
 

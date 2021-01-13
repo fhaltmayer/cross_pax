@@ -1,5 +1,48 @@
 import threading
 
+class Log_Test:
+    def __init__(self):   
+        self.log = {}
+        self.last_free = 0
+        
+        self.log_lock = threading.Lock()
+        self.last_free_lock = threading.Lock()
+
+    # do mutext check
+    def get_next(self):
+        with self.last_free_lock and self.log_lock:
+            while True:
+                if self.last_free in self.log:
+                    self.last_free += 1
+                else:
+                    return self.last_free
+
+    def get_val(self, location):
+        with self.log_lock:
+            if location in self.log:
+                return self.log[location]
+            else:
+                return None
+
+
+
+    def update_log(self, location, msg):
+        with self.log_lock: 
+            if location in self.log:
+                return False
+            else:
+                self.log[location] = msg
+                return True
+
+    def get_log(self):
+        with self.log_lock:
+            return self.log
+
+    # Need to test edges cases to see if this is even needed.
+    # def release_hold(self, location):
+    #     with self.last_free_lock
+
+
 class KV:
     def __init__(self):   
         self.kv_store = {}
@@ -64,18 +107,30 @@ class KV:
         return debug
 
 if __name__ == "__main__":
-    test = KV()
-    nex = test.get_next()
-    print(nex)
-    lat = test.get_latest_write()
-    print(lat)
-    test.update_log(nex, "put", "key", "val")
-    test.update_log(10, "put", "key2", "val2")
-    nex = test.get_next()
-    test.update_log(nex, "put", "key1", "val1")
-    nex = test.get_next()
-    test.update_log(nex, "del", "key1", "val1")
+    # test = KV()
+    # nex = test.get_next()
+    # print(nex)
+    # lat = test.get_latest_write()
+    # print(lat)
+    # test.update_log(nex, "put", "key", "val")
+    # test.update_log(10, "put", "key2", "val2")
+    # nex = test.get_next()
+    # test.update_log(nex, "put", "key1", "val1")
+    # nex = test.get_next()
+    # test.update_log(nex, "del", "key1", "val1")
 
-    print(test.debug_vals())
-    test.update_kv_store()
-    print(test.debug_vals())
+    # print(test.debug_vals())
+    # test.update_kv_store()
+    # print(test.debug_vals())
+    test = Log_Test()
+    x = test.get_next()
+    print(x)
+    test.update_log(x, "woot")
+    print(test.get_val(x))
+    print(test.get_log())
+    x = test.get_next()
+    print(x)
+    test.update_log(x, "woot2")
+    print(test.get_val(x))
+    print(test.get_log())
+    print(test.get_val(10))
