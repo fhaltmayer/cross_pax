@@ -30,9 +30,10 @@ accepted_val_lock = threading.Lock()
 accepted_proposal = -1
 accepted_proposal_lock = threading.Lock()
 
-test_val = None
-test_comes = []
-
+debug_recieved_msg = []
+debug_sent_msg = []
+debug_threads = []
+debug_value_log = []
 
 
 
@@ -58,44 +59,21 @@ def home():
     global view 
     global my_id
     global my_ip
-    global test_val
-    global test_comes
     global accepted_val
     global accepted_proposal
     global majority
+    global debug_recieved_msg
+    global debug_sent_msg
+    global debug_threads
+    global debug_value_log
+
     # global proposal_number
     proposal_number = 0
-    info = flask.jsonify({"my_id": my_id, "my_ip": my_ip, "majority": majority, "view": view, "test_val": test_val, "outcomes": test_comes, "accepted_val": accepted_val, "accepted_proposal": accepted_proposal})
-    return info
-
-# @app.route('/kv-store/<key>', methods = ['GET'])
-# def get_req(key):
-#     global kv_log
-#     return kv_log.debug_vals()
-
-# @app.route('/kv-store/<key>', methods = ['PUT'])
-# def put_req(key):
-#     global kv_log
-#     req = request.get_json()
-#     val = req["val"]
-#     spot = kv_log.get_next()
-#     kv_log.update_log(spot, 'put', key, val)
-#     return kv_log.debug_vals()
-
-# @app.route('/kv-store/<key>', methods = ['DEL'])
-# def del_req(key):
-#     global kv_log
-#     req = request.get_json()
-#     val = req["val"]
-#     spot = kv_log.get_next()
-#     kv_log.update_log(spot, 'del', key)
-#     return kv_log.debug_vals()
-
-# @app.route('/kv-store/update', methods = ['GET'])
-# def update_req():
-#     global kv_log
-#     kv_log.update_kv_store()
-#     return kv_log.debug_vals()
+    return flask.jsonify({"my_id": my_id, "my_ip": my_ip, 
+                        "majority": majority, "view": view, "accepted_val": accepted_val, 
+                        "accepted_proposal": accepted_proposal, "debug_sent_msg": debug_sent_msg, 
+                        "debug_recieved_msg": debug_recieved_msg, "debug_threads": debug_threads, 
+                        "debug_value_log": debug_value_log })
 
 @app.route('/kv-store/test_recieve', methods = ['POST'])
 def test_recieve():
@@ -104,53 +82,56 @@ def test_recieve():
     global accepted_proposal_lock
     global accepted_val
     global accepted_val_lock
+    global debug_recieved_msg
+    global debug_value_log
+    global base_proposal
 
     msg = None
+
     res = request.get_json()
+    debug_recieved_msg.append((res, time.time()))
     
     if res["msg"] == "prepare":
 
-        with accepted_val_lock:
-            with accepted_proposal_lock:
-                if accepted_proposal > -1:
-                    msg = {"result": "accepted", "accepted_proposal": accepted_proposal, "accepted_val": accepted_val}
-
-        if msg != None:
-            return flask.jsonify(msg)
-
         inc_pn = res["proposal_number"]
-        
+
         with min_proposal_lock:
+            
             if inc_pn < min_proposal:
                 msg = {"result": "nack", "min_proposal": min_proposal}
 
             elif inc_pn > min_proposal:
                 min_proposal = inc_pn
+                with base_proposal_lock:
+                    if min_proposal//100 > base_proposal:
+                        base_proposal = min_proposal//100
+
                 msg = {"result": "promise"}
 
-        
+                with accepted_val_lock and accepted_proposal_lock:
+                    if accepted_proposal > -1:
+                        msg = {"result": "accepted", "accepted_proposal": accepted_proposal, "accepted_val": accepted_val}
 
+        # Seperated msg send due to not wanting to hold lock during message blocking
         return flask.jsonify(msg)
 
     if res["msg"] == "accept":
-
-
         
         inc_pn = res["proposal_number"]
         
-        with min_proposal_lock:
-            
+        with min_proposal_lock and accepted_val_lock and accepted_proposal_lock:
             if inc_pn >= min_proposal:
-                with accepted_val_lock:
-                    with accepted_proposal_lock:
-                       accepted_proposal = inc_pn
-                       accepted_val = res["val"]
-                       min_proposal = inc_pn
+                accepted_proposal = inc_pn
+                accepted_val = res["val"]
+                min_proposal = inc_pn
+                with base_proposal_lock:
+                    if min_proposal//100 > base_proposal:
+                        base_proposal = min_proposal//100
+
+                global debug_value_log
+                debug_value_log.append((accepted_proposal, accepted_val, "accepted"))
 
             msg = {"result": min_proposal}
-
-
-        
 
         return flask.jsonify(msg)
 
@@ -163,17 +144,21 @@ def test_POST():
     res = request.get_json()
     val = res["val"]
     redo = True
+    decided_val = None
     
-    
-    # while redo:
-    proposal_number, accept_val = prepare(val)
-    redo = accept(proposal_number, accept_val)
-    
-    return flask.jsonify({"Success":1}) 
+    while redo:
+        proposal_number, decided_val = prepare(val)
+        redo = accept(proposal_number, decided_val)
+    if val != decided_val:
+        return flask.jsonify({"Value already stored": decided_val }) 
+    else:
+        return flask.jsonify({"Success": val}) 
 
 def prepare(val):
     global base_proposal
     global view
+    global debug_sent_msg
+
     outcome = False
     already_accepted = False
     accepted_val = None
@@ -183,12 +168,13 @@ def prepare(val):
         # add exponential backoff here
         with base_proposal_lock:
             base_proposal += 1
-
-        # calculation based on having 100 nodes
-        proposal_number = (base_proposal) * 100 + my_id       
-
+            # calculation based on having 100 nodes
+            proposal_number = (base_proposal) * 100 + my_id 
+       
         msg = {"msg": "prepare", "proposal_number": proposal_number, "val": val}
-        
+        debug_sent_msg.append((msg, time.time()))
+
+
 
         outcomes = []
         threads = []
@@ -204,9 +190,9 @@ def prepare(val):
 
         # Decide how long to loop waiting to see if there is a larger accepted value
         wait_response = True
-
+        count = 10
         # Use this area for seeing if i need to rerun the entire process with a larger proposal number, add checks to see if ive gotten stuff about
-        while wait_response: 
+        while wait_response and count > 0: 
             
             time.sleep(.1)
             
@@ -215,7 +201,7 @@ def prepare(val):
 
             if len(outcomes) > 0 and outcomes[0][0] > -1:
                 already_accepted = True
-                accepted_val = outcomes[0][1]
+                prev_accepted_val = outcomes[0][1]
 
             if len(outcomes) - outcomes.count((-1, "nack")) >= majority:
                 stop_threads = True
@@ -225,9 +211,10 @@ def prepare(val):
             elif outcomes.count((-1, "nack")) >= majority:
                 stop_threads = True
                 wait_reponse = False
+            count -=1
     
     if already_accepted:
-        return proposal_number, accepted_val
+        return proposal_number, prev_accepted_val
     else:
         return proposal_number, val
 
@@ -243,10 +230,9 @@ def prepare_thread(msg, address, outcomes, stop_threads):
         if res:
             res = res.json()
             if res["result"] == "nack":
-                with base_proposal_lock:
-                    if base_proposal < res["min_proposal"]//100:
-                        base_proposal = res["min_proposal"]//100
-
+                # with base_proposal_lock:
+                #     if base_proposal < res["min_proposal"]//100:
+                #         base_proposal = res["min_proposal"]//100
                 outcomes.append((-1, "nack"))
                 success = True
 
@@ -268,11 +254,13 @@ def accept(proposal_number, val):
     global accepted_proposal_lock
     global accepted_proposal
 
+    global debug_sent_msg
+
     
     # add exponential backoff here
   
     msg = {"msg": "accept", "proposal_number": proposal_number, "val": val}
-    
+    debug_sent_msg.append((msg, time.time()))
     outcomes = []
     threads = []
     stop_threads = False
@@ -293,9 +281,6 @@ def accept(proposal_number, val):
 
         
         time.sleep(.1)
-        global test_comes
-        test_comes.append(outcomes)
-
         if len(outcomes) >= majority:
             if "reject" in outcomes:
                 redo = True
@@ -303,11 +288,18 @@ def accept(proposal_number, val):
             outcome = True
             wait_response = False
 
+    global debug_value_log
+
     if not redo:
+        debug_value_log.append((proposal_number, val, "to be accepted"))
         with accepted_val_lock:
-            accepted_val = val
             with accepted_proposal_lock:
+                accepted_val = val
                 accepted_proposal = proposal_number
+                debug_value_log.append((accepted_proposal, accepted_val, "accepted"))
+    else:
+        debug_value_log.append((proposal_number, val, "rejected"))
+
     return redo
 
 
@@ -317,8 +309,6 @@ def accept_thread(msg, address, outcomes, stop_threads):
         res = requests.post(address, json = msg, timeout=1)
         if res:
             res = res.json()
-            global test_comes
-            test_comes.append((res["result"],msg["proposal_number"]))
             if res["result"] > msg["proposal_number"]:
                 outcomes.append("reject")
                 success = True
@@ -352,7 +342,7 @@ def accept_thread(msg, address, outcomes, stop_threads):
    
 if __name__ == "__main__":
     startup()
-    app.run(host='0.0.0.0', threaded = False)#, use_reloader=False)
+    app.run(host='0.0.0.0', threaded = True)#, use_reloader=False)
 
 
 # def startup():

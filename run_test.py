@@ -2,6 +2,7 @@ import os
 import requests
 import json
 import time
+import threading
 class Node:
     def __init__(self, external_port, ip, node_id):
         self.external_port = external_port
@@ -10,7 +11,7 @@ class Node:
     def __str__(self):
         return "\n External Port: " + str(self.external_port) + "\n IP: " + self.ip + "\n ID: " + str(self.id)
 
-def build_file(name):
+def build_file(name): 
     os.system("sudo docker build . -t " + name)
 
 def build_view(count, ip = "10.0.0.", internal_port = 5000, external_port = 8080):
@@ -44,11 +45,30 @@ def kill_all():
 
 def test_broadcast(nodes, local):
     node = nodes[0]
+    node2  = nodes[1]
     address = local + ":" + str(node.external_port) + "/kv-store/test_POST"
-    print("sending to ip: " + address)
-    msg = {"key": "key", "val": "val"}
-    response = requests.post(address, json = msg)
-    print(response.json())
+    address2 = local + ":" + str(node2.external_port) + "/kv-store/test_POST"
+    
+    def concurrent(address, num):
+        print("sending to ip: " + address)
+        msg = {"val": "val" + str(num)}
+        response = requests.post(address, json = msg)
+        print(address, "done")
+    thread = threading.Thread(target=concurrent, args=(address, 1))
+    thread2 = threading.Thread(target=concurrent, args=(address2, 2))
+    thread.start()
+    thread2.start()
+    thread.join()
+    thread2.join()
+    results = []
+    for x in nodes:
+        address = local + ":" + str(x.external_port) + "/"
+        response = requests.get(address)
+        response = response.json()
+        results.append((x.external_port, response["accepted_val"], response["accepted_proposal"]))
+    print(results)
+    return 1
+
 
 if __name__ == "__main__":
 
@@ -58,12 +78,13 @@ if __name__ == "__main__":
     external_port = 8080
     ip = "10.0.0."
     net = "mynet"
-
+    node_count = 5
+    
     kill_all()
 
     build_file(name)
 
-    nodes = build_view(10, ip, internal_port, external_port)
+    nodes = build_view(node_count, ip, internal_port, external_port)
     
     launch_instances(nodes, internal_port, net, name)
 
