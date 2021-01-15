@@ -73,6 +73,29 @@ def test_broadcast(nodes, local):
         if x[1] != equal:
             print("Not all the same vallue")
             break
+    threads = []
+    for i, x in enumerate(nodes[:len(nodes)//2]):
+        address = local + ":" + str(x.external_port) + "/kv-store/test_POST"
+        thread = threading.Thread(target=concurrent, args=(address, i))
+        thread.start()
+        threads.append(thread)
+
+    for x in threads:
+        x.join()
+
+    results = []
+
+    for x in nodes:
+        address = local + ":" + str(x.external_port) + "/"
+        response = requests.get(address)
+        response = response.json()
+        results.append((x.external_port, response["log"]))
+    print(results)
+    equal = results[0][1]
+    for x in results:
+        if x[1] != equal:
+            print("Not all the same vallue")
+            break
 
     return 1
 

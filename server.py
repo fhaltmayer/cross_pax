@@ -210,7 +210,7 @@ def prepare(location, val):
 
         # Decide how long to loop waiting to see if there is a larger accepted val
         wait_response = True
-        count = 10
+        count = 5
         # Use this area for seeing if i need to rerun the entire process with a larger proposal number, add checks to see if ive gotten stuff about
         while wait_response and count > 0: 
             
@@ -245,7 +245,7 @@ def prepare_thread(msg, address, outcomes, stop_threads):
     
     success = False
     while (not stop_threads) or (not success):
-        res = requests.post(address, json = msg, timeout=1)
+        res = requests.post(address, json = msg, timeout=.25)
         if res:
             res = res.json()
             if res["result"] == "nack":
@@ -359,7 +359,7 @@ def accept_thread(msg, address, outcomes, stop_threads):
    
 if __name__ == "__main__":
     startup()
-    app.run(host='0.0.0.0', threaded = False)#, use_reloader=False)
+    app.run(host='0.0.0.0', threaded = True)#, use_reloader=False)
 
 
 # def startup():
@@ -370,3 +370,4 @@ if __name__ == "__main__":
 # Figure out how to store max accepted in a dictionary. 
 
 # curl -X PUT -H "Content-Type: application/json" -d '{"key":"value"}' http://localhost:8083/kv-store/key
+# http://www.beyondthelines.net/algorithm/multi-paxos/
