@@ -185,8 +185,9 @@ def prepare(location, val):
     already_accepted = False
     accepted_val = None
     proposal_number = None
+    backoff = 0
     while not outcome:
-
+        time.sleep(back*2)
         # add exponential backoff here
         with paxos_log[location]["lock"]:
             paxos_log[location]["base_proposal"] += 1
@@ -232,7 +233,7 @@ def prepare(location, val):
                 stop_threads = True
                 wait_reponse = False
             count -=1
-    
+        backoff += 1
     if already_accepted:
         return proposal_number, prev_accepted_val
     else:
