@@ -157,9 +157,13 @@ def test_broadcast(nodes):
         print("sending to ip: " + address)
         msg = {"val": str(random.randint(0,1000))}
         response = requests.post(address, json = msg)
-        print(address, "done")
+        response.json()
+        if "success" in response:
+            print(address, "success")
+        else:
+            print(address, "failure")
     threads = []
-    count = 100
+    count = 10
     while(count > 0):
         for i, x in enumerate(nodes):
             address = x.full_public_address + "/kv-store/test_POST"
@@ -167,6 +171,7 @@ def test_broadcast(nodes):
             thread.start()
             threads.append(thread)
         count -= 1
+        time.sleep(.25)
 
     for x in threads:
         x.join()
@@ -184,6 +189,7 @@ def test_broadcast(nodes):
         if x[1] != equal:
             same = False
             break
+    print(equal)
     if same:
         print("All nodes are consistent.")
     else:

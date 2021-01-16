@@ -187,7 +187,8 @@ def prepare(location, val):
     proposal_number = None
     backoff = 0
     while not outcome:
-        time.sleep(back*2)
+        sleep_time = backoff*2
+        time.sleep(sleep_time)
         # add exponential backoff here
         with paxos_log[location]["lock"]:
             paxos_log[location]["base_proposal"] += 1
