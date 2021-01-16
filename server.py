@@ -68,7 +68,6 @@ def home():
                         # "majority": majority, 
                         # "view": view, 
                         "log": val_log, 
-                        "paxos_log": paxos_log
                         # "debug_sent_msg": debug_sent_msg, 
                         # "debug_recieved_msg": debug_recieved_msg, 
                         # "debug_threads": debug_threads, 
@@ -187,10 +186,10 @@ def prepare(location, val):
     already_accepted = False
     accepted_val = None
     proposal_number = None
-    backoff = 0
+    backoff = False
     while not outcome:
-        sleep_time = backoff*2
-        time.sleep(sleep_time)
+        if backoff:
+            time.sleep(random.random()*4)
         # add exponential backoff here
         with paxos_log[location]["lock"]:
             paxos_log[location]["base_proposal"] += 1
@@ -236,7 +235,6 @@ def prepare(location, val):
                 stop_threads = True
                 wait_reponse = False
             count -=1
-        backoff += 1
     if already_accepted:
         return proposal_number, prev_accepted_val
     else:

@@ -4,7 +4,7 @@ import json
 import time
 def test_broadcast(local):
 
-    address = local + ":" + str(5000) + "/kv-store/test_POST"
+    address = local + ":" + str(8082) + "/kv-store/test_POST"
     print("sending to ip: " + address)
     response = requests.post(address, json = {"val": "val"})
     print(response)
@@ -16,7 +16,7 @@ def test_broadcast(local):
 
 if __name__ == "__main__":
 
-    local = "http://54.189.128.41"
+    local = "http://127.0.0.1"
     name = "paxos"
     internal_port = 5000
     external_port = 5000
@@ -25,5 +25,5 @@ if __name__ == "__main__":
 
     test_broadcast(local)
 
-# sudo docker run -p 5000:5000 -e VIEW=10.0.0.249:5000 -e IPPORT=10.0.0.153:5000 paxos
+# sudo docker run -p 5000:5000 -e VIEW=10.0.0.249:8082 -e IPPORT=10.0.0.153:5000 paxos
 # sudo docker run -p 5000:5000 -e VIEW=10.0.0.153:5000 -e IPPORT=10.0.0.249:5000 paxos

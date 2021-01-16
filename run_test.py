@@ -3,6 +3,7 @@ import requests
 import json
 import time
 import threading
+import random
 class Node:
     def __init__(self, external_port, ip, node_id):
         self.external_port = external_port
@@ -47,15 +48,26 @@ def test_broadcast(nodes, local):
    
     def concurrent(address, num):
         print("sending to ip: " + address)
-        msg = {"val": "val" + str(num)}
+        msg = {"val": str(random.randint(0,1000))}
         response = requests.post(address, json = msg)
-        print(address, "done")
+        response = response.json()
+        if "result" in response:
+            print(address, "success")
+        else:
+            print(address, "failure")
+
+
+
     threads = []
-    for i, x in enumerate(nodes[:len(nodes)//2]):
-        address = local + ":" + str(x.external_port) + "/kv-store/test_POST"
-        thread = threading.Thread(target=concurrent, args=(address, i))
-        thread.start()
-        threads.append(thread)
+    count = 10
+    while count > 0:
+        for i, x in enumerate(nodes[:len(nodes)]):
+            address = local + ":" + str(x.external_port) + "/kv-store/test_POST"
+            thread = threading.Thread(target=concurrent, args=(address, i))
+            thread.start()
+            threads.append(thread)
+        count -= 1
+        time.sleep(.25)
 
     for x in threads:
         x.join()
@@ -73,29 +85,7 @@ def test_broadcast(nodes, local):
         if x[1] != equal:
             print("Not all the same vallue")
             break
-    threads = []
-    for i, x in enumerate(nodes[:len(nodes)//2]):
-        address = local + ":" + str(x.external_port) + "/kv-store/test_POST"
-        thread = threading.Thread(target=concurrent, args=(address, i))
-        thread.start()
-        threads.append(thread)
 
-    for x in threads:
-        x.join()
-
-    results = []
-
-    for x in nodes:
-        address = local + ":" + str(x.external_port) + "/"
-        response = requests.get(address)
-        response = response.json()
-        results.append((x.external_port, response["log"]))
-    print(results)
-    equal = results[0][1]
-    for x in results:
-        if x[1] != equal:
-            print("Not all the same vallue")
-            break
 
     return 1
 
@@ -108,7 +98,7 @@ if __name__ == "__main__":
     external_port = 8080
     ip = "10.0.0."
     net = "mynet"
-    node_count = 10
+    node_count = 5
     
     kill_all()
 

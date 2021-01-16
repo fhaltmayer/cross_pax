@@ -158,12 +158,12 @@ def test_broadcast(nodes):
         msg = {"val": str(random.randint(0,1000))}
         response = requests.post(address, json = msg)
         response.json()
-        if "success" in response:
+        if "result" in response:
             print(address, "success")
         else:
             print(address, "failure")
     threads = []
-    count = 10
+    count = 5
     while(count > 0):
         for i, x in enumerate(nodes):
             address = x.full_public_address + "/kv-store/test_POST"
@@ -210,7 +210,7 @@ if __name__ == "__main__":
 
     port = 5000
     private_ip = "10.0.0."
-    node_count = 10
+    node_count = 5
     nodes = build_nodes(node_count, private_ip, port)
     run_nodes(nodes)
     get_public_ip(nodes)
