@@ -60,6 +60,7 @@ def home():
     global debug_threads
     global debug_val_log
     global val_log
+    global paxos_log
     # global proposal_number
     return flask.jsonify({
                         # "my_id": my_id, 
@@ -67,6 +68,7 @@ def home():
                         # "majority": majority, 
                         # "view": view, 
                         "log": val_log, 
+                        "paxos_log": paxos_log
                         # "debug_sent_msg": debug_sent_msg, 
                         # "debug_recieved_msg": debug_recieved_msg, 
                         # "debug_threads": debug_threads, 
