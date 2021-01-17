@@ -251,9 +251,9 @@ def prepare_thread(msg, address, outcomes, stop_threads):
         if res:
             res = res.json()
             if res["result"] == "nack":
-                # with base_proposal_lock:
-                #     if base_proposal < res["min_proposal"]//100:
-                #         base_proposal = res["min_proposal"]//100
+                # with paxos_log[location]["lock"]:
+                #     if paxos_log[location]["base_proposal"] < res["min_proposal"]//100:
+                #         paxos_log[location]["base_proposal"] = res["min_proposal"]//100
                 outcomes.append((-1, "nack"))
                 success = True
 
