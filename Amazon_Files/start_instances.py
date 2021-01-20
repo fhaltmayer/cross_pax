@@ -68,6 +68,7 @@ class Node:
         self.json["PrivateIpAddress"] = private_ip
         self.view = None
         self.instance_id = None
+        self.full_public_address = None
 
   
 
@@ -106,6 +107,7 @@ def run_nodes(nodes):
                 x.instance_id = output["Instances"][0]["InstanceId"]
                 print(str("Node " + str(x.id) + " launched."))
                 checker.remove(x)
+                x.running = True
             except:
                 # print("Node " + str(x.id) + " failed to launch.")
                 pass
@@ -157,7 +159,7 @@ def test_broadcast(nodes):
         print("sending to ip: " + address)
         msg = {"val": str(random.randint(0,1000))}
         response = requests.post(address, json = msg)
-        response.json()
+        response = response.json()
         if "result" in response:
             print(address, "success")
         else:
@@ -170,8 +172,9 @@ def test_broadcast(nodes):
             thread = threading.Thread(target=concurrent, args=(address, i))
             thread.start()
             threads.append(thread)
+            time.sleep(.1)
         count -= 1
-        time.sleep(.25)
+        # time.sleep(.25)
 
     for x in threads:
         x.join()
@@ -198,6 +201,13 @@ def test_broadcast(nodes):
 
     return 1
 
+def stop_nodes(nodes, count):
+    for x in nodes[:count]:
+        os.system("aws ec2 stop-instances --instance-ids " + x.instance_id)
+        x.running = False
+    new_nodes = [x for x in nodes if x.running == True]
+    test_broadcast(new_nodes)
+
 def shutdown(nodes):
     for x in nodes:
         os.system("aws ec2 terminate-instances --instance-ids " + x.instance_id)
@@ -216,6 +226,7 @@ if __name__ == "__main__":
     get_public_ip(nodes)
     wait_for_load(nodes)
     test_broadcast(nodes)
+    stop_nodes(nodes, 3)
     input("Press enter to shutdown instances...")
     shutdown(nodes)
 

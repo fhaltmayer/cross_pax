@@ -44,9 +44,10 @@ def launch_instances(nodes, internal_port, net, name):
 def kill_all():
     os.system("sudo docker kill $(docker ps -q)")
 
-def test_broadcast(nodes, local):
+def test_broadcast(nodes, local, percentage):
    
     def concurrent(address, num):
+        
         print("sending to ip: " + address)
         msg = {"val": str(random.randint(0,1000))}
         response = requests.post(address, json = msg)
@@ -61,13 +62,21 @@ def test_broadcast(nodes, local):
     threads = []
     count = 10
     while count > 0:
-        for i, x in enumerate(nodes[:len(nodes)]):
+        rand_percentage = int(len(nodes) * (percentage/100))
+        random_start = random.random()*(len(nodes)-rand_percentage)
+        random_start = int(random_start)
+
+        end = random_start+rand_percentage
+        end = int(end)
+
+        for i, x in enumerate(nodes[random_start: end]):
             address = local + ":" + str(x.external_port) + "/kv-store/test_POST"
             thread = threading.Thread(target=concurrent, args=(address, i))
             thread.start()
             threads.append(thread)
+            time.sleep(.1)
         count -= 1
-        time.sleep(.25)
+        
 
     for x in threads:
         x.join()
@@ -79,14 +88,14 @@ def test_broadcast(nodes, local):
         response = requests.get(address)
         response = response.json()
         results.append((x.external_port, response["log"]))
-    print(results)
+    
     equal = results[0][1]
     for x in results:
         if x[1] != equal:
             print("Not all the same vallue")
-            break
+            return 0
 
-
+    print(results)
     return 1
 
 
@@ -98,7 +107,7 @@ if __name__ == "__main__":
     external_port = 8080
     ip = "10.0.0."
     net = "mynet"
-    node_count = 5
+    node_count = 10
     
     kill_all()
 
@@ -109,8 +118,9 @@ if __name__ == "__main__":
     launch_instances(nodes, internal_port, net, name)
 
     time.sleep(1)
-
-    test_broadcast(nodes, local)
+    failure = 1
+    # while failure != 0:
+    failure = test_broadcast(nodes, local, 20)
 
 # sudo docker run -p 8083:5000 --ip=10.0.0.20 --net=mynet  -e VIEW=10.0.0.20:5000,10.0.0.21:5000,10.0.0.22:5000,10.0.0.23:5000 -e IPPORT=10.0.0.20:8080 paxos
 
