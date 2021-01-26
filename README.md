@@ -1,2 +1,2 @@
 # cross_pax
-Paxos key value store across multiple cloud providers
+Paxos based replicated log across the cloud. 
