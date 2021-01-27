@@ -39,6 +39,9 @@ def startup():
     global view
     global majority
 
+    # get server number
+    # setup redis
+
     my_ip = os.environ['IPPORT']
     my_id = my_ip.split(":")[0]
     my_id = int(my_id.split(".")[-1])
@@ -78,7 +81,6 @@ def home():
     global debug_val_log
     global val_log
     global paxos_log
-    # global proposal_number
 
     return flask.jsonify({
                         # "my_id": my_id, 
@@ -99,81 +101,90 @@ def heartbeat():
 
 @app.route('/kv-store/prepare_recieve', methods = ['POST'])
 def prepare_recieve():
-    global debug_recieved_msg
-    global debug_val_log
-    global logs_lock
-    global paxos_log
-    global val_log
+    global log
+
     msg = None
 
     res = request.get_json()
-    debug_recieved_msg.append((res, time.time()))
     
     inc_pn = res["proposal_number"]
 
     location = res["location"]
+    
+    log.prepare_loc(location)
 
-    with logs_lock:
-        if location not in paxos_log:
-            paxos_log[location] = {"base_proposal": 0, "min_proposal": -1, "accepted_val": None, "accepted_proposal": -1,  "lock": threading.Lock()}
+    log.get_lock(location)
 
-    with paxos_log[location]["lock"]:
+    min_proposal = int(log.r.hget(str(location), "min_proposal")):
+
+
+    if inc_pn <= min_proposal:
+
+        msg = {"location": location, "result": "nack", "min_proposal": min_proposal}
+
+    else:
+
+        log.r.hset(str(location), "min_proposal", str(inc_pn))
+        base = int(log.r.hget(str(location), "base_proposal"))
+        already_accepted = int(log.r.hget(str(location),"already_accepted"))
+        server_limit = int(log.r.get("server_limit"))
+
+        if min_proposal//server_limit > base:
+
+            log.r.hset(str(location), "base_proposal", str(min_proposal//server_limit))
+
+        if already_accepted == 1:
+
+            accepted_proposal = str(log.r.hget(str(location), "accepted_proposal"))
+            accepted_val = str(log.r.hget(str(location), "accepted_val"))
+
+            msg = {"location": location, "result": "accepted", "accepted_proposal": accepted_proposal, "accepted_val": accepted_val}
         
-        if inc_pn <= paxos_log[location]["min_proposal"]:
-            msg = {"location": location, "result": "nack", "min_proposal": paxos_log[location]["min_proposal"]}
-
         else:
-            paxos_log[location]["min_proposal"] = inc_pn
 
-            if paxos_log[location]["min_proposal"]//100 > paxos_log[location]["base_proposal"]:
-                paxos_log[location]["base_proposal"] = paxos_log[location]["min_proposal"]//100
+            msg = {"location": location, "result": "promise"}
 
-            if paxos_log[location]["accepted_proposal"] > -1:
-                msg = {"location": location, "result": "accepted", "accepted_proposal": paxos_log[location]["accepted_proposal"], "accepted_val": paxos_log[location]["accepted_val"]}
-            
-            else:
-                msg = {"location": location, "result": "promise"}
+    log.release_lock(location)
 
-            
-            
-
-    # Seperated msg send due to not wanting to hold lock during message blocking
     return flask.jsonify(msg)
 
 @app.route('/kv-store/accept_recieve', methods = ['POST'])
 def accept_recieve():
-    global debug_recieved_msg
-    global debug_val_log
-    global logs_lock
-    global paxos_log
-    global val_log
-    msg = None
+    global log
 
-    res = request.get_json()
-    debug_recieved_msg.append((res, time.time()))
-    
+    msg = {"location": location,"result": "denied"}
+
+    res = request.get_json()    
 
     inc_pn = res["proposal_number"]
     
     location = res["location"]
 
-    with logs_lock:
-        if location not in paxos_log:
-            paxos_log[location] = {"base_proposal": 0, "min_proposal": -1, "accepted_val": None, "accepted_proposal": -1,  "lock": threading.Lock()}
+    log.prepare_loc(location)
 
+    log.get_lock(location)
+
+    min_proposal = int(log.r.hget(str(location), "min_proposal")):
     
-    with paxos_log[location]["lock"]:
-        if inc_pn == paxos_log[location]["min_proposal"]:
-            paxos_log[location]["accepted_proposal"] = inc_pn
-            paxos_log[location]["accepted_val"] = res["val"]
-            val_log[location] = res["val"]
-            
-            if paxos_log[location]["min_proposal"]//100 > paxos_log[location]["base_proposal"]:
-                paxos_log[location]["base_proposal"] = paxos_log[location]["min_proposal"]//100
-               
-            debug_val_log.append((paxos_log[location]["accepted_proposal"], paxos_log[location]["accepted_val"], "accepted"))
+    
+    if inc_pn == min_proposal:
 
-        msg = {"location": location,"result": paxos_log[location]["min_proposal"]}
+        log.r.hset(str(location), "accepted_val", str(inc_pn))
+        log.r.hset(str(location), "accepted_val", str(res["val"]))
+        log.r.hset(str(location), "already_accepted", str(1))
+
+        base = int(log.r.hget(str(location), "base_proposal"))
+        server_limit = int(log.r.get("server_limit"))
+
+        
+        if min_proposal//server_limit > base:
+
+            log.r.hset(str(location), "base_proposal", str(min_proposal//server_limit))
+           
+
+        msg = {"location": location,"result": "accepted"}
+
+    log.release_lock(location)
 
     return flask.jsonify(msg)
 
@@ -182,9 +193,7 @@ def accept_recieve():
 
 @app.route('/kv-store/test_POST', methods = ['POST'])
 def test_POST():
-    global val_log
-    global paxos_log
-    global next_free
+    global log
     
     res = request.get_json()
     val = res["val"]
@@ -197,26 +206,24 @@ def test_POST():
         redo = True
         decided_val = None
 
-        with logs_lock:
-            while next_free in paxos_log: #and paxos_log[next_free]["accepted_val"]!= None:
-                next_free += 1
-            paxos_log[next_free] = {"base_proposal": 0, "min_proposal": -1, "accepted_val": None, "accepted_proposal": -1,  "lock": threading.Lock()}
+        next_loc = log.get_next_loc()
+        log.prepare_loc(next_loc, my_id)
 
         while redo:
-            proposal_number, decided_val = prepare(next_free, val)
+            proposal_number, decided_val = prepare(next_loc, val)
             redo = accept(next_free, proposal_number, decided_val)
         
-        if val != decided_val:
-            pass
-        else:
+        if val == decided_val:
             successful_log_entry = True
+        
+            
             
     return flask.jsonify({"result": "success", "val": val}) 
 
 def prepare(location, val):
     global view
-    global debug_sent_msg
-    global paxos_log
+    global log
+    global my_id
 
     outcome = False
     already_accepted = False
@@ -229,13 +236,9 @@ def prepare(location, val):
             time.sleep(random.random()*exponent)
             exponent += 1
         # add exponential backoff here
-        with paxos_log[location]["lock"]:
-            paxos_log[location]["base_proposal"] += 1
-            # calculation based on having 100 nodes
-            proposal_number = (paxos_log[location]["base_proposal"]) * 100 + my_id 
+        proposal_number = log.get_proposal()
        
         msg = {"location": location, "msg": "prepare", "proposal_number": proposal_number}
-        debug_sent_msg.append((msg, time.time()))
 
         outcomes = []
         threads = []
@@ -252,9 +255,11 @@ def prepare(location, val):
         # Decide how long to loop waiting to see if there is a larger accepted val
         wait_response = True
         count = 5
+        wait_sleep = .5
+
         while wait_response and count > 0: 
             
-            time.sleep(.5)
+            time.sleep(wait_sleep)
             
             outcomes.sort(reverse=True)
 
@@ -317,16 +322,13 @@ def prepare_thread(msg, address, outcomes, stop_threads):
 
 def accept(location, proposal_number, val):
     global view
-    global paxos_log
-    global val_log
-    global debug_sent_msg
-    global debug_val_log
+    global log
 
     
     # add exponential backoff here
   
     msg = {"location": location, "msg": "accept", "proposal_number": proposal_number, "val": val}
-    debug_sent_msg.append((msg, time.time()))
+
     outcomes = []
     threads = []
     stop_threads = False
@@ -361,15 +363,12 @@ def accept(location, proposal_number, val):
     
 
     if not redo:
-        debug_val_log.append((location, proposal_number, val, "to be accepted"))
         with paxos_log[location]["lock"]:
             if proposal_number >= paxos_log[location]["min_proposal"]:
                 paxos_log[location]["accepted_val"] = val
                 paxos_log[location]["accepted_proposal"] = proposal_number
-                debug_val_log.append((paxos_log[location]["accepted_proposal"], paxos_log[location]["accepted_val"], "accepted"))
                 val_log[location] = val
             else:
-                debug_val_log.append((location, proposal_number, val, "rejected",paxos_log[location]["min_proposal"]))
                 redo = True
     else:
         debug_val_log.append((location, proposal_number, val, "rejected"))
@@ -399,30 +398,14 @@ def accept_thread(msg, address, outcomes, stop_threads):
 
 
 
-
-# def sched_request():
-#     global my_ip 
-#     global other_ip
-#     x = requests.get("http://" + other_ip + ":5000" + '/request')
-
-
-
-# if other_ip != False:
-#     scheduler = BackgroundScheduler()
-#     scheduler.add_job(func=sched_request, trigger="interval", seconds=3)
-#     scheduler.start()
-
-   
 if __name__ == "__main__":
     startup()
     app.run(host='0.0.0.0', threaded = True)#, use_reloader=False)
 
 
-# def startup():
-#     
-
 # In multi-paxos, peers can lag behind as you noticed. If you read the values from a quorum though you're guaranteed to see the most recent value, the trick is figuring out which one that is. Not all applications need this but if yours does, a very simple augmentation is sufficient. Just use a tuple instead of the raw value where the first item is an update counter and the second is the raw value. Each time a peer tries to update the value, it also updates the counter. So when you read from a quorum, the tuple with the highest update counter is guaranteed to be the most recent value.
-# We are going to be running state machine, all continuous actions below x are commited. 
+# We are going to be running state machine, all continuous actions below x are commited.
+
 # Figure out how to store max accepted in a dictionary. 
 
 # curl -X PUT -H "Content-Type: application/json" -d '{"key":"value"}' http://localhost:8083/kv-store/key
