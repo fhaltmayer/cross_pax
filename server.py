@@ -247,8 +247,9 @@ def prepare(location, val):
         # add exponential backoff here
         if backoff:
             print("backing off exponent:", exponent, flush=True)
-            time.sleep(random.random()*5*exponent)
-            exponent += 1
+            time.sleep(random.random()*exponent)
+            if exponent < 4:
+                exponent += 1
         
         proposal_number = log.get_proposal(location)
        
@@ -280,7 +281,7 @@ def prepare(location, val):
                 if outcomes[0][0] > -1:
                     already_accepted = True
                     prev_accepted_val = outcomes[0][1]
-                    log.r.append("accepted_recieve", "At_Loc:" + str(location) + " " + str(prev_accepted_val))
+                    log.r.append("accepted_recieved", "At_Loc:" + str(location) + " " + str(prev_accepted_val))
 
                 stop_threads = True
                 outcome = True

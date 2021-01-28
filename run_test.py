@@ -78,7 +78,10 @@ def test_broadcast(nodes, local, percentage):
             thread = threading.Thread(target=concurrent, args=(address, i))
             thread.start()
             threads.append(thread)
-            time.sleep(.5)
+            if i %2  == 0:
+                time.sleep(.1)
+            else:
+                pass
 
         count -= 1
         
