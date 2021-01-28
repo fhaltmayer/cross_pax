@@ -42,8 +42,8 @@ def startup():
     log = Log(my_id)
     log.r.set("created_loc_pax", "Created entry from paxos request:")
     log.r.set("created_locs_client", "Created entry from client request:")
-    log.r.set("accepted_recieve", "Accepted Already recieved:")
-    log.r.set("accept_sent_sent", "Accepted Already sent out:")
+    log.r.set("accepted_recieved", "Accepted Already recieved:")
+    log.r.set("accepted_sent", "Accepted Already sent out:")
     log.r.set("promise_own", "I promise my own: ")
 
 
@@ -77,8 +77,8 @@ def home():
 
     returnal[-1] = str(log.r.get("created_loc_pax"))
     returnal[-2] = str(log.r.get("created_locs_client"))
-    returnal[-3] = str(log.r.get("accept_recieve"))
-    returnal[-4] = str(log.r.get("accept_sent"))
+    returnal[-3] = str(log.r.get("accepted_recieved"))
+    returnal[-4] = str(log.r.get("accepted_sent"))
     returnal[-5] = str(log.r.get("promise_own"))
 
     return flask.jsonify(returnal)
@@ -116,8 +116,7 @@ def common_prepare(res):
 
     print("prepare recieved: ", inc_pn, min_proposal, flush=True)
 
-    # Test if == or >= necessary
-    if inc_pn >= min_proposal:
+    if inc_pn <= min_proposal:
 
         msg = {"location": location, "result": "nack", "min_proposal": min_proposal}
 
@@ -139,7 +138,7 @@ def common_prepare(res):
             accepted_val = log.r.hget(str(location), "accepted_val").decode('utf-8')
 
             msg = {"location": location, "result": "accepted", "accepted_proposal": accepted_proposal, "accepted_val": accepted_val}
-            log.r.append("accept_sent", " " + str(location))
+            log.r.append("accepted_sent", " " + str(location))
 
         else:
 
@@ -281,7 +280,7 @@ def prepare(location, val):
                 if outcomes[0][0] > -1:
                     already_accepted = True
                     prev_accepted_val = outcomes[0][1]
-                    log.r.append("accept_recieve", "At_Loc:" + str(location) + " " + str(prev_accepted_val))
+                    log.r.append("accepted_recieve", "At_Loc:" + str(location) + " " + str(prev_accepted_val))
 
                 stop_threads = True
                 outcome = True
@@ -325,7 +324,6 @@ def prepare_thread(msg, address, outcomes, stop_threads, location):
 
         elif res["result"] == "accepted":
             outcomes.append((res["accepted_proposal"], res["accepted_val"]))
-            # log.r.append("promise_own", "At_Loc:" + str(location) + " " + str(prev_accepted_val))
 
         elif res["result"] == "promise":
             outcomes.append((-1, "promise"))
@@ -454,10 +452,6 @@ def accept_thread(msg, address, outcomes, stop_threads):
                 if count < 0:
                     success = True
                     outcomes.append("reject")
-
-
-
-
 
 
 if __name__ == "__main__":
