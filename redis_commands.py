@@ -38,10 +38,13 @@ class Log(object):
 
     def prepare_loc(self, location):
         self.get_lock(location)
+        returnal = False
         if self.r.exists(str(location)) == 0:
             maps = {"base_proposal": "0", "min_proposal": "-1", "accepted_val": "N", "accepted_proposal": "-1", "already_accepted": "-1"}
             self.r.hset(str(location), mapping=maps)
+            returnal = True
         self.release_lock(location)
+        return returnal
 
     def get_proposal(self, location):
         self.get_lock(location)
@@ -104,5 +107,5 @@ if __name__== "__main__":
     # print(temp.r.hget("1", "accepted_val"))
 
     
-
+# Continue work at accept
 

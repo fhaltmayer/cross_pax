@@ -4,6 +4,7 @@ import json
 import time
 import threading
 import random
+
 class Node:
     def __init__(self, external_port, ip, node_id):
         self.external_port = external_port
@@ -30,7 +31,6 @@ def launch_instances(nodes, internal_port, net, name):
         else:
             launch_string = "sudo docker run -d"
         view = [y.ip + ":" + str(internal_port) for y in nodes]
-        view.remove(x.ip + ":" + str(internal_port))
         launch_string += " -p " + str(x.external_port) + ":" + str(internal_port)
         launch_string += " --ip=" + x.ip 
         launch_string += " --net=" + net
@@ -57,24 +57,29 @@ def test_broadcast(nodes, local, percentage):
         else:
             print(address, "failure")
 
-
-
     threads = []
-    count = 10
-    while count > 0:
-        rand_percentage = int(len(nodes) * (percentage/100))
-        random_start = random.random()*(len(nodes)-rand_percentage)
-        random_start = int(random_start)
+    count = 3
 
-        end = random_start+rand_percentage
-        end = int(end)
+    while count > 0:
+        if percentage < 0:
+            random_start = 0
+            end = 1
+        
+        else:
+            rand_percentage = int(len(nodes) * (percentage/100))
+            random_start = random.random()*(len(nodes)-rand_percentage)
+            random_start = int(random_start)
+
+            end = random_start+rand_percentage
+            end = int(end)
 
         for i, x in enumerate(nodes[random_start: end]):
             address = local + ":" + str(x.external_port) + "/kv-store/test_POST"
             thread = threading.Thread(target=concurrent, args=(address, i))
             thread.start()
             threads.append(thread)
-            time.sleep(.1)
+            time.sleep(random.random()*.5)
+
         count -= 1
         
 
@@ -83,19 +88,19 @@ def test_broadcast(nodes, local, percentage):
 
     results = []
 
-    for x in nodes:
-        address = local + ":" + str(x.external_port) + "/"
-        response = requests.get(address)
-        response = response.json()
-        results.append((x.external_port, response["log"]))
+    # for x in nodes:
+    #     address = local + ":" + str(x.external_port) + "/"
+    #     response = requests.get(address)
+    #     response = response.json()
+    #     results.append((x.external_port, response["log"]))
     
-    equal = results[0][1]
-    for x in results:
-        if x[1] != equal:
-            print("Not all the same vallue")
-            return 0
+    # equal = results[0][1]
+    # for x in results:
+    #     if x[1] != equal:
+    #         print("Not all the same vallue")
+    #         return 0
 
-    print(results)
+    # print(results)
     return 1
 
 
@@ -118,9 +123,8 @@ if __name__ == "__main__":
     launch_instances(nodes, internal_port, net, name)
 
     time.sleep(1)
-    failure = 1
-    # while failure != 0:
-    failure = test_broadcast(nodes, local, 20)
+
+    test_broadcast(nodes, local, 40)
 
 # sudo docker run -p 8083:5000 --ip=10.0.0.20 --net=mynet  -e VIEW=10.0.0.20:5000,10.0.0.21:5000,10.0.0.22:5000,10.0.0.23:5000 -e IPPORT=10.0.0.20:8080 paxos
 
