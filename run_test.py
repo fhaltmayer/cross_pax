@@ -39,6 +39,7 @@ def launch_instances(nodes, internal_port, net, name):
         launch_string += " -e IPPORT=" + x.ip + ":" + str(internal_port)
         launch_string += " " + name
         os.system(launch_string)
+    time.sleep(2)
     os.system("sudo docker ps")
 
 def kill_all():
@@ -78,10 +79,10 @@ def test_broadcast(nodes, local, percentage):
             thread = threading.Thread(target=concurrent, args=(address, i))
             thread.start()
             threads.append(thread)
-            if i %2  == 0:
-                time.sleep(.1)
-            else:
-                pass
+            # if i %2  == 0:
+            #     time.sleep(.1)
+            # else:
+            #     pass
 
         count -= 1
         
@@ -115,7 +116,7 @@ if __name__ == "__main__":
     external_port = 8080
     ip = "10.0.0."
     net = "mynet"
-    node_count = 10
+    node_count = 20
     
     kill_all()
 
@@ -127,9 +128,9 @@ if __name__ == "__main__":
 
     time.sleep(1)
 
-    test_broadcast(nodes, local, 60)
+    test_broadcast(nodes, local, 80)
 
 # sudo docker run -p 8083:5000 --ip=10.0.0.20 --net=mynet  -e VIEW=10.0.0.20:5000,10.0.0.21:5000,10.0.0.22:5000,10.0.0.23:5000 -e IPPORT=10.0.0.20:8080 paxos
 
-# sudo docker run -p 8082:5000 --ip=10.0.0.2 --net=mynet  -e VIEW=10.0.0.3:5000 -e IPPORT=10.0.0.2:5000 paxos
-# sudo docker run -p 8083:5000 --ip=10.0.0.3 --net=mynet  -e VIEW=10.0.0.2:5000 -e IPPORT=10.0.0.3:5000 paxos
+# sudo docker run -p 8082:5000 --ip=10.0.0.2 --net=mynet  -e VIEW=10.0.0.2:5000,10.0.0.3:5000 -e IPPORT=10.0.0.2:5000 paxos
+# sudo docker run -p 8083:5000 --ip=10.0.0.3 --net=mynet  -e VIEW=10.0.0.2:5000,10.0.0.3:5000 -e IPPORT=10.0.0.3:5000 paxos

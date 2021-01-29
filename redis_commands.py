@@ -3,11 +3,15 @@ import json
 import threading
 
 class Log(object):
-    def __init__(self, my_id, host='localhost', port=6379, server_limit = 100, ):
+    def __init__(self, my_id, my_ip, view, majority, host='localhost', port=6379, server_limit = 100, ):
         self.r = redis.Redis(host=host, port=port, db=0)
         self.r.set("last_used","-1")
         self.r.set("server_limit", str(server_limit))
         self.my_id = my_id
+        self.my_ip = my_ip
+        self.r.hset("view", mapping = view)
+        self.r.set("majority", str(majority))
+        self.r.set("leader", my_ip)
 
     def get_lock(self, location):
         getting_lock = True
@@ -36,6 +40,24 @@ class Log(object):
 
         return next_free
 
+    def update_leader(self, view):
+        self.get_lock("leader_elect")
+
+        for x in view:
+            self.r.hset("view", x, view[x])
+        new_leader = (None, -1)
+        for x in self.r.hkeys("view"):
+            if int(self.r.hget("view", x)) > new_leader[1]:
+                new_leader = (x.decode("utf-8"), int(self.r.hget("view", x)))
+
+        self.r.set("leader", new_leader[0])
+        
+        self.release_lock("leader_elect")
+        
+
+
+
+
     def prepare_loc(self, location):
         self.get_lock(location)
         returnal = False
@@ -53,7 +75,7 @@ class Log(object):
         server_limit = int(self.r.get("server_limit"))
         self.r.hset(str(location), "base_proposal", str(base))
         self.release_lock(location)
-        return base * server_limit + self.my_id
+        return base * server_limit + int(self.my_id)
 
     # def base_prop_update(self, location, new):
     #     self.get_lock(location)

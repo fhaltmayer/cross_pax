@@ -26,12 +26,13 @@ def test_broadcast(local):
         thread = threading.Thread(target=concurrent, args=(address,))
         thread.start()
         threads.append(thread)
-        thread = threading.Thread(target=concurrent, args=(address2,))
-        thread.start()
-        threads.append(thread)
-    shuffle(threads)
-    for x in threads:
-        x.start()
+        # thread = threading.Thread(target=concurrent, args=(address2,))
+        # thread.start()
+        # threads.append(thread)
+        
+    # random.shuffle(threads)
+    # for x in threads:
+        # x.start()
     for x in threads:
         x.join()
 
