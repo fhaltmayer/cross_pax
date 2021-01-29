@@ -45,7 +45,7 @@ def launch_instances(nodes, internal_port, net, name):
 def kill_all():
     os.system("sudo docker kill $(docker ps -q)")
 
-def test_broadcast(nodes, local, percentage):
+def test_broadcast(nodes, local, percentage, paxos, rounds):
    
     def concurrent(address, num):
         
@@ -59,9 +59,8 @@ def test_broadcast(nodes, local, percentage):
             print(address, "failure")
 
     threads = []
-    count = 10
 
-    while count > 0:
+    while rounds > 0:
         if percentage < 0:
             random_start = 0
             end = 1
@@ -75,7 +74,7 @@ def test_broadcast(nodes, local, percentage):
             end = int(end)
 
         for i, x in enumerate(nodes[random_start: end]):
-            address = local + ":" + str(x.external_port) + "/kv-store/test_POST"
+            address = local + ":" + str(x.external_port) + "/kv-store/" + paxos
             thread = threading.Thread(target=concurrent, args=(address, i))
             thread.start()
             threads.append(thread)
@@ -84,7 +83,7 @@ def test_broadcast(nodes, local, percentage):
             # else:
             #     pass
 
-        count -= 1
+        rounds -= 1
         
 
     for x in threads:
@@ -92,19 +91,23 @@ def test_broadcast(nodes, local, percentage):
 
     results = []
 
-    # for x in nodes:
-    #     address = local + ":" + str(x.external_port) + "/"
-    #     response = requests.get(address)
-    #     response = response.json()
-    #     results.append((x.external_port, response["log"]))
+    for x in nodes:
+        address = local + ":" + str(x.external_port) + "/"
+        response = requests.get(address)
+        response = response.json()
+        sub_res = []
+        for y in response:
+            if int(y) > -1:
+                sub_res.append(response[y])
+        sub_res.sort()
+        results.append((x.external_port, sub_res))
     
-    # equal = results[0][1]
-    # for x in results:
-    #     if x[1] != equal:
-    #         print("Not all the same vallue")
-    #         return 0
+    equal = results[0][1]
+    for x in results:
+        if x[1] != equal:
+            return 0
 
-    # print(results)
+    print(results)
     return 1
 
 
@@ -116,7 +119,12 @@ if __name__ == "__main__":
     external_port = 8080
     ip = "10.0.0."
     net = "mynet"
-    node_count = 20
+    node_count = 10
+    percent = 20
+    rounds = 5
+    paxos = "multipaxos"
+    # paxos = "paxos"
+
     
     kill_all()
 
@@ -128,7 +136,7 @@ if __name__ == "__main__":
 
     time.sleep(1)
 
-    test_broadcast(nodes, local, 80)
+    test_broadcast(nodes, local, percent, paxos, rounds)
 
 # sudo docker run -p 8083:5000 --ip=10.0.0.20 --net=mynet  -e VIEW=10.0.0.20:5000,10.0.0.21:5000,10.0.0.22:5000,10.0.0.23:5000 -e IPPORT=10.0.0.20:8080 paxos
 

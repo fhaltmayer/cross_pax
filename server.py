@@ -15,10 +15,8 @@ app.config["DEBUG"] = True
 
 log = None
 
-
-
-
 def startup():
+    
     global log
 
     view = []
@@ -27,15 +25,15 @@ def startup():
     my_id = str(my_id.split(".")[-1])
     other_ip = os.environ['VIEW']
     ips = other_ip.split(',')
+    
     for x in ips:
         view.append(x)
-    majority = len(view)// 2
+
+    majority = len(view) // 2
 
     leader_elect_view = {i: ("-1" if i != my_ip else my_id) for i in view}
     
-
     log = Log(my_id=my_id, my_ip=my_ip, view=leader_elect_view, majority=majority)
-    
     
     scheduler = BackgroundScheduler()
     scheduler.add_job(func=heartbeat_worker, trigger="interval", seconds=2)
@@ -49,21 +47,16 @@ def startup():
     log.r.set("promise_own", "I promise my own: ")
 
 
-
-
-
-    # Might break with multithreaded process
 def heartbeat_worker():
+
     global log
 
-    view = log.r.hkeys("view")
+    view = log.r.hkeys("-1")
     outcomes = []
     threads = []
     
     for ip in view:
-        ip = ip.decode("utf-8")
         if log.my_ip != ip:
-            
             thread = threading.Thread(target=heartbeat_thread, args=(ip, outcomes, ) )
             threads.append(thread)
             thread.start()
@@ -72,65 +65,63 @@ def heartbeat_worker():
         x.join()
 
     new_view = {x:y for x,y in outcomes}
-    print(new_view, flush = True)
     log.update_leader(new_view)
-    return True
+
 
 def heartbeat_thread(ip, outcomes):
+    
     address = "http://" + ip + "/kv-store/heartbeat"
+    
     try:
         res = requests.get(address, timeout = .2)
+
     except:
         res = None
+
     if res:
         res = res.json()
-        # print(res, flush = True)
         outcomes.append((ip, res["my_id"]))
+
     else:
         outcomes.append((ip, str(-1)))
-
-    
-
-
-    # scheduler = BackgroundScheduler()
-    # scheduler.add_job(func=heartbeat, trigger="interval", seconds=3)
-    # scheduler.start()
-
-    
 
 
 @app.route('/', methods = ['GET'])
 def home():
+
     global log
-
-    print(flush=True)
-
-    # s = heartbeat_worker()
 
     returnal = {}
 
     for x in log.r.scan_iter(_type="HASH"):
-        if x.decode('utf-8') != "view":
+        if int(x) > -1:
             returnal[int(x)] = str(log.r.hgetall(x))
 
-    returnal[-1] = log.r.get("created_loc_pax").decode("utf-8")
-    returnal[-2] = log.r.get("created_locs_client").decode("utf-8")
-    returnal[-3] = log.r.get("accepted_recieved").decode("utf-8")
-    returnal[-4] = log.r.get("accepted_sent").decode("utf-8")
-    returnal[-5] = log.r.get("promise_own").decode("utf-8")
-    returnal[-6] = "View: " + str(log.r.hgetall("view"))
-    returnal[-7] = "Leader: " + log.r.get("leader").decode("utf-8")
+    returnal[-2] = log.r.get("created_locs_client")
+    returnal[-3] = log.r.get("accepted_recieved")
+    returnal[-4] = log.r.get("accepted_sent")
+    returnal[-5] = log.r.get("promise_own")
+    returnal[-6] = "View: " + str(log.r.hgetall("-1"))
+    returnal[-7] = "Leader: " + log.r.get("leader")
+    returnal[-8] = log.r.get("created_loc_pax")
+
 
     return flask.jsonify(returnal)
 
+
 @app.route('/kv-store/heartbeat', methods = ['GET'])
 def heartbeat():
+
     global log
+
     print("got heartbeat", flush=True)
+
     return flask.jsonify({"my_id": log.my_id})
+
 
 @app.route('/kv-store/prepare_recieval', methods = ['POST'])
 def prepare_recieval():
+
     res = request.get_json()
 
     msg = common_prepare(res)
@@ -138,13 +129,11 @@ def prepare_recieval():
     return flask.jsonify(msg)
 
 def common_prepare(res):
+
     global log
 
     msg = None
-
-    
     inc_pn = res["proposal_number"]
-
     location = res["location"]
     
     created = log.prepare_loc(location)
@@ -156,18 +145,15 @@ def common_prepare(res):
 
     min_proposal = int(log.r.hget(str(location), "min_proposal"))
 
-    # print("prepare recieved: ", inc_pn, min_proposal, flush=True)
-
     if inc_pn <= min_proposal:
-
         msg = {"location": location, "result": "nack", "min_proposal": min_proposal}
 
-    else:
-
-        log.r.hset(str(location), "min_proposal", str(inc_pn))
+    else:        
         base = int(log.r.hget(str(location), "base_proposal"))
         already_accepted = int(log.r.hget(str(location),"already_accepted"))
         server_limit = int(log.r.get("server_limit"))
+
+        log.r.hset(str(location), "min_proposal", str(inc_pn))
 
         # Test to see if worth catching up base proposal
         # if min_proposal//server_limit > base:
@@ -175,15 +161,14 @@ def common_prepare(res):
         #     log.r.hset(str(location), "base_proposal", str(min_proposal//server_limit))
 
         if already_accepted == 1:
-
             accepted_proposal = int(log.r.hget(str(location), "accepted_proposal"))
-            accepted_val = log.r.hget(str(location), "accepted_val").decode('utf-8')
+            accepted_val = log.r.hget(str(location), "accepted_val")
 
             msg = {"location": location, "result": "accepted", "accepted_proposal": accepted_proposal, "accepted_val": accepted_val}
+
             log.r.append("accepted_sent", " " + str(location))
 
         else:
-
             msg = {"location": location, "result": "promise"}
 
     log.release_lock(location)
@@ -193,6 +178,7 @@ def common_prepare(res):
 
 @app.route('/kv-store/accept_recieval', methods = ['POST'])
 def accept_recieval():
+
     global log
 
     res = request.get_json()    
@@ -204,7 +190,6 @@ def accept_recieval():
 def common_accept(res):
 
     inc_pn = res["proposal_number"]
-    
     location = res["location"]
 
     msg = {"location": location,"result": "denied"}
@@ -213,8 +198,6 @@ def common_accept(res):
 
     min_proposal = int(log.r.hget(str(location), "min_proposal"))
     
-    # print("accepted recieved: ", inc_pn, min_proposal, flush=True)
-
     # Test if == or >=
     if inc_pn >= min_proposal:
 
@@ -237,21 +220,49 @@ def common_accept(res):
 
     return msg
 
-
-
-@app.route('/kv-store/test_POST', methods = ['POST'])
-def test_POST():
+@app.route('/kv-store/paxos', methods = ['POST'])
+def paxos():
+    
     global log
 
-    leader = log.r.get("leader").decode("utf-8")
-    print(leader, flush=True)
-    if log.my_ip == leader:
+    res = request.get_json()
+    val = res["val"]
+
+    successful_log_entry = False
+
+    while not successful_log_entry:
+
+        redo = True
+        decided_val = None
+
+        next_loc = log.get_next_loc()
+        created = log.prepare_loc(next_loc)
+
+        if created:
+            log.r.append("created_locs_client", " " + str(next_loc))
+
+        while redo:
+            proposal_number, decided_val = prepare(next_loc, val)
+            redo = accept(next_loc, proposal_number, decided_val)
+        
+        if val == decided_val:
+            successful_log_entry = True
+        
+    return flask.jsonify({"result": "success", "val": val}) 
+
+
+@app.route('/kv-store/multipaxos', methods = ['POST'])
+def multipaxos():
     
+    global log
+
+    leader = log.r.get("leader")
+
+    if log.my_ip == leader:
         res = request.get_json()
         val = res["val"]
 
         successful_log_entry = False
-
 
         while not successful_log_entry:
 
@@ -271,20 +282,13 @@ def test_POST():
             if val == decided_val:
                 successful_log_entry = True
             
-                
-                
         return flask.jsonify({"result": "success", "val": val}) 
 
     else:
         msg = request.get_json()
         
-        # try:
-        res = requests.post("http://" + leader + "/kv-store/test_POST", json = msg)
+        res = requests.post("http://" + leader + "/kv-store/multipaxos", json = msg)
         res = res.json()
-         # except:
-            # res = None
-        # if res:
-        # res = requests.post("http://" + leader + "/kv-store/test_POST", json = msg, timeout=.25)
 
         return flask.jsonify(res)
 
@@ -297,25 +301,27 @@ def prepare(location, val):
     accepted_val = None
     proposal_number = None
     backoff = False
-    exponent = 1
+    exponent = .1 
 
     while not outcome:
-
         # add exponential backoff here
         if backoff:
             print("backing off exponent:", exponent, flush=True)
-            time.sleep(random.random()*exponent)
+            print("sleeping " + str(exponent))
+            time.sleep(exponent)
             if exponent < 4:
-                exponent += 1
+                exponent += random.random()*1
         
         proposal_number = log.get_proposal(location)
+        print(proposal_number, flush = True)
        
         msg = {"location": location, "msg": "prepare", "proposal_number": proposal_number}
         outcomes = []
         threads = []
         stop_threads = False
-        for address in log.r.hkeys("view"):
-            address = address.decode("utf-8")
+
+        for address in log.r.hkeys("-1"):
+            address = address
             thread = threading.Thread(target=prepare_thread, args=(msg, address, outcomes, lambda: stop_threads, location) )
             threads.append(thread)
             thread.start()
@@ -324,9 +330,10 @@ def prepare(location, val):
         accepted_val = None
 
         # Decide how long to loop waiting to see if there is a larger accepted val
+        
+        loop_sleep = .5
         wait_response = True
         count = 5
-        loop_sleep = .5
 
         while wait_response and count > 0: 
             
@@ -347,17 +354,16 @@ def prepare(location, val):
             elif outcomes.count((-1, "nack")) > majority:
                 stop_threads = True
                 wait_reponse = False
+
             else:
                 count -=1
-
+        print(outcomes, flush =True)
         stop_threads = True
-
         backoff = True
-
-        # log.r.delete(outcomes)
 
     if already_accepted:
         return proposal_number, prev_accepted_val
+
     else:
         return proposal_number, val
 
@@ -367,16 +373,11 @@ def prepare_thread(msg, address, outcomes, stop_threads, location):
     global log
 
     if address == log.my_ip:
-
-
-
         res = common_prepare(msg)
 
         if res["result"] == "nack":
             outcomes.append((-1, "nack"))
             log.r.append("promise_own", " no-" + str(location))
-
-
 
         elif res["result"] == "accepted":
             outcomes.append((res["accepted_proposal"], res["accepted_val"]))
@@ -385,9 +386,8 @@ def prepare_thread(msg, address, outcomes, stop_threads, location):
             outcomes.append((-1, "promise"))
             log.r.append("promise_own", " yes-" + str(location))
 
-
         else:
-            print("Dont understand prepare message")
+            print("Dont understand prepare message", flush=True)
 
     else:
         success = False
@@ -395,8 +395,10 @@ def prepare_thread(msg, address, outcomes, stop_threads, location):
         while  (not stop_threads()) and (not success):
             try:
                 res = requests.post("http://" + address + "/kv-store/prepare_recieval", json = msg, timeout=.25)
+
             except:
                 res = None
+
             if res:
                 res = res.json()
                 if res:
@@ -411,8 +413,7 @@ def prepare_thread(msg, address, outcomes, stop_threads, location):
                     elif res["result"] == "promise":
                         outcomes.append((-1, "promise"))
                         success = True
-                    else:
-                        print("Dont understand prepare message")
+
             else:
                 count -= 1
                 if count < 0:
@@ -420,38 +421,28 @@ def prepare_thread(msg, address, outcomes, stop_threads, location):
                     success = True
 
 
-      
-        # time.sleep(.1)
-
-
 def accept(location, proposal_number, val):
+
     global log
 
     majority = int(log.r.get("majority"))
-    
-    # add exponential backoff here
-  
+      
     msg = {"location": location, "msg": "accept", "proposal_number": proposal_number, "val": val}
 
     outcomes = []
     threads = []
     stop_threads = False
 
-    for address in log.r.hkeys("view"):
-        address = address.decode("utf-8")
+    for address in log.r.hkeys("-1"):
+        address = address
         thread = threading.Thread(target=accept_thread, args=(msg, address, outcomes, lambda: stop_threads))
         threads.append(thread)
         thread.start()
 
-
-    # Decide how long to loop waiting to see if there is a larger accepted val
-    wait_response = True
+    
     redo = False
-
-
-    # Use this area for seeing if i need to rerun the entire process with a larger proposal number, add checks to see if ive gotten stuff about
-    # Add a countdown for lost messages so it does not block
     count = 5
+    wait_response = True
     while wait_response: 
 
         time.sleep(.5)
@@ -465,18 +456,21 @@ def accept(location, proposal_number, val):
             stop_threads = True
             outcome = True
             wait_response = False
+
         else:
             count -= 1
             if count == 0:
                 redo = True
                 wait_response = False
+
     return redo
 
 
-def accept_thread(msg, address, outcomes, stop_threads):  
-    global log
-    if address == log.my_ip:
+def accept_thread(msg, address, outcomes, stop_threads):
 
+    global log
+
+    if address == log.my_ip:
         res = common_accept(msg)
 
         if res["result"] =="rejected":
@@ -491,8 +485,10 @@ def accept_thread(msg, address, outcomes, stop_threads):
         while (not stop_threads()) and (not success):
             try:
                 res = requests.post("http://" + address + "/kv-store/accept_recieval", json = msg, timeout=.25)
+
             except:
                 res = None
+
             if res:
                 res = res.json()
                 if res["result"] =="rejected":
@@ -502,6 +498,7 @@ def accept_thread(msg, address, outcomes, stop_threads):
                 elif res["result"] == "accepted":
                     success = True
                     outcomes.append("accept")
+
             else:
                 count -= 1
                 if count < 0:
