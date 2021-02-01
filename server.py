@@ -29,7 +29,7 @@ def startup():
     for x in ips:
         view.append(x)
 
-    majority = len(view) // 2
+    majority = len(view)// 2
 
     leader_elect_view = {i: ("-1" if i != my_ip else my_id) for i in view}
     
@@ -104,6 +104,9 @@ def home():
     returnal[-6] = "View: " + str(log.r.hgetall("-1"))
     returnal[-7] = "Leader: " + log.r.get("leader")
     returnal[-8] = log.r.get("created_loc_pax")
+    returnal[-9] = "majority: " + log.r.get("majority")
+
+
 
 
     return flask.jsonify(returnal)

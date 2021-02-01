@@ -4,6 +4,7 @@ import json
 import time
 import threading
 import random
+import subprocess
 
 class Node:
     def __init__(self, external_port, ip, node_id):
@@ -38,12 +39,29 @@ def launch_instances(nodes, internal_port, net, name):
         launch_string += ",".join(view)
         launch_string += " -e IPPORT=" + x.ip + ":" + str(internal_port)
         launch_string += " " + name
-        os.system(launch_string)
+        # print(launch_string)
+        node_id = subprocess.check_output(launch_string, shell=True).decode("utf-8").rstrip('\n')
+        x.docker_id = node_id
+        print(x.docker_id)
     time.sleep(2)
     os.system("sudo docker ps")
 
 def kill_all():
     os.system("sudo docker kill $(docker ps -q)")
+
+
+
+def disconnect_node(node, network):
+    dis_string = "sudo docker network disconnect " + network + " " + node.docker_id
+    os.system(dis_string)
+    time.sleep(0.5)
+
+
+def connect_node(node, network):
+    con_string = "sudo docker network connect " + network + " --ip=" + node.ip + ' ' + node.id
+    os.system(con_string)
+    time.sleep(0.5)
+
 
 def test_broadcast(nodes, local, percentage, paxos, rounds):
    
@@ -110,6 +128,9 @@ def test_broadcast(nodes, local, percentage, paxos, rounds):
     print(results)
     return 1
 
+# def test_diconnected_nodes(nodes, local, paxos):
+#     disconnect_nodes = nodes[:len(nodes)]
+
 
 if __name__ == "__main__":
 
@@ -119,7 +140,7 @@ if __name__ == "__main__":
     external_port = 8080
     ip = "10.0.0."
     net = "mynet"
-    node_count = 10
+    node_count = 12
     percent = 20
     rounds = 5
     paxos = "multipaxos"
