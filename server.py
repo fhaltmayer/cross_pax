@@ -513,6 +513,7 @@ if __name__ == "__main__":
     startup()
     app.run(host='0.0.0.0', threaded = True, use_reloader=False)#, use_reloader=False)
 
+# Figure out the log -> file with redis
 
 # In multi-paxos, peers can lag behind as you noticed. If you read the values from a quorum though you're guaranteed to see the most recent value, the trick is figuring out which one that is. Not all applications need this but if yours does, a very simple augmentation is sufficient. Just use a tuple instead of the raw value where the first item is an update counter and the second is the raw value. Each time a peer tries to update the value, it also updates the counter. So when you read from a quorum, the tuple with the highest update counter is guaranteed to be the most recent value.
 # We are going to be running state machine, all continuous actions below x are commited.

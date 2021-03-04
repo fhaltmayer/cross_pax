@@ -1,5 +1,5 @@
 import threading
-
+# Implement in redis
 class Log_Test:
     def __init__(self):   
         self.log = {}
